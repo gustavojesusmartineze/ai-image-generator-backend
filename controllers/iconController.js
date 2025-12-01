@@ -1,3 +1,4 @@
+const { expandPrompt } = require('../services/geminiService');
 const { generateImage } = require('../services/replicateService');
 const NodeCache = require('node-cache');
 
@@ -31,9 +32,38 @@ const generateIcons = async (req, res) => {
 
         if (!items) {
             console.log(`Cache miss for prompt: ${prompt} with colors: ${colors}`);
+            items = await expandPrompt(prompt, colors);
+            promptCache.set(cacheKey, items);
         } else {
             console.log(`Cache hit for prompt: ${prompt}`);
         }
+        // TODO: We can implement same caching for generated images.
+        //  if needed a deterministic output
+
+        // 2. Generate Images in Parallel
+        const imagePromises = items.map(async (item) => {
+            // Replace {ITEM} in the template with the specific item
+            // Also append color instructions if provided
+            let fullPrompt = styleTemplate.replace(/{ITEM}/g, item);
+
+            if (colors) {
+                fullPrompt += ` Use these brand colors: ${colors}.`;
+            }
+
+            const imageUrl = await generateImage(fullPrompt);
+            return {
+                item,
+                url: imageUrl
+            };
+        });
+
+        const results = await Promise.all(imagePromises);
+
+        res.json({
+            originalPrompt: prompt,
+            styleId,
+            icons: results
+        });
 
     } catch (error) {
         console.error('Generation Error:', error);
